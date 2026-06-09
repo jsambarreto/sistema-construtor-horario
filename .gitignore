@@ -1,0 +1,28 @@
+# Ambientes Virtuais do Python
+venv/
+.venv/
+env/
+
+# Cache de Execução do Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Configurações Locais do VS Code
+.vscode/
+.history/
+
+# --- DADOS DO PROJETO (SIGILO E SEGURANÇA) ---
+# Ignora arquivos Excel originais e planilhas finais geradas
+*.xlsx
+*.xls
+~$*.xlsx
+~$*.xls
+
+# Ignora todos os arquivos CSV intermediários (Base FET, Docentes, Turmas)
+*.csv
+
+# Ignora as pastas de trabalho criadas automaticamente pelo pipeline
+csv_gerados/
+csv_extraidos/
