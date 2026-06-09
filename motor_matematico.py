@@ -265,7 +265,9 @@ def executar_diagnostico(turmas_alvo, docentes, restricoes_fixas=None):
     status_diag = solver_diag.Solve(modelo_diag)
     
     if status_diag in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-        print("\n--- RELATÓRIO DE CHOQUES (Aulas bloqueadas) ---")
+        print("\n" + "="*60)
+        print(" 🚨 RELATÓRIO DE CHOQUES E AUDITORIA DE GARGALOS")
+        print("="*60)
         falhas = 0
         for turma, demandas in turmas_alvo.items():
             for dmd in demandas:
@@ -274,11 +276,44 @@ def executar_diagnostico(turmas_alvo, docentes, restricoes_fixas=None):
                 
                 alocadas = int(sum(solver_diag.Value(var) for var in vars_aula))
                 if alocadas < ch:
-                    print(f"-> GARGALO ENCONTRADO: {turma} | {disc} ({doc}) | Pediu: {ch} | Alocou: {alocadas} | Faltam: {ch - alocadas}")
+                    faltam = ch - alocadas
                     falhas += 1
+                    
+                    # --- INÍCIO DA AUDITORIA DO GARGALO ---
+                    # 1. Analisa a disponibilidade do professor
+                    impedimentos = docentes.get(doc, {}).get('impedimentos', [])
+                    dias_livres = [d for d in DIAS if d not in impedimentos]
+                    
+                    # 2. Calcula a ocupação atual do professor e da turma
+                    aulas_totais_doc = sum(solver_diag.Value(v) for (t, di, do, d, b), v in aloc_diag.items() if do == doc)
+                    aulas_totais_turma = sum(solver_diag.Value(v) for (t, di, do, d, b), v in aloc_diag.items() if t == turma)
+                    
+                    print(f"\n❌ GARGALO: {turma} | {disc} ({doc})")
+                    print(f"   📊 Status: Pediu {ch} aulas -> Alocou {alocadas} -> Faltam {faltam}")
+                    print("   🔍 Diagnóstico:")
+                    
+                    if len(dias_livres) <= 2:
+                        print(f"      - Motivo Primário: Restrição severa de dias. O professor só está autorizado a trabalhar em {dias_livres}.")
+                        print(f"      - Sugestão: Remova os impedimentos de '{doc}' na planilha 'Docentes.csv'.")
+                        
+                    elif aulas_totais_doc >= (len(dias_livres) * 5): 
+                        # Se ele dá muitas aulas por dia disponível, não sobram blocos duplos
+                        print(f"      - Motivo Primário: Agenda do professor estrangulada. Ele já tem {aulas_totais_doc} aulas empacotadas em apenas {len(dias_livres)} dias livres na instituição.")
+                        print(f"      - Sugestão: Libere mais dias de trabalho para '{doc}' removendo impedimentos, ou reduza a sua carga horária.")
+                        
+                    elif aulas_totais_turma >= 35: 
+                        print(f"      - Motivo Primário: Superlotação da Turma. A turma '{turma}' já está com a grade quase cheia ({aulas_totais_turma} aulas) e não possui blocos duplos vazios que coincidam com o professor.")
+                        print(f"      - Sugestão: Verifique os outros professores que dão aula na turma '{turma}' nos dias {dias_livres} e altere as restrições deles para ceder espaço para o '{doc}'.")
+                        
+                    else:
+                        print(f"      - Motivo Primário: Conflito Geométrico de Blocos (Contiguidade). O professor até tem dias livres {dias_livres}, mas a regra pedagógica que proíbe aulas isoladas impediu o encaixe num 'buraco' de 1 aula.")
+                        print(f"      - Sugestão: É provável que outro professor com muitas restrições tenha fragmentado a grade da '{turma}'. Avalie a grade parcial gerada no Excel para identificar quem ocupou os blocos contíguos de '{doc}'.")
+        
         if falhas > 0:
-            print(f"\n[AÇÃO] Os ficheiros Excel gerados terão espaços em branco nestes bloqueios.")
+            print("\n" + "-"*60)
+            print("[AÇÃO AUTOMÁTICA] Os ficheiros Excel gerados terão as células correspondentes a estes bloqueios em branco, respeitando a integridade geométrica (sem dividir aulas de 2 horas).")
         return solver_diag, status_diag, aloc_diag
+    
     return None, status_diag, None
 
 def resolver_horario_estruturado(docentes, turmas):
