@@ -97,7 +97,7 @@ def aplicar_restricoes_sinteticas(docentes, turmas):
             perfil = perfil_integrado[contador % 2]
             docentes[doc]['impedimentos'] = perfil.copy()
             print(f" -> {doc} (CH: {ch_total}): Alocado ao Bloco Integral - 3 dias de trabalho (Folgas: {perfil})")
-
+            contador += 1
         else:
             # Acima de 16 horas: Mantido totalmente livre devido à elevada carga horária
             print(f" -> {doc} (CH: {ch_total}): Sem restrições sintéticas (Dias livres mapeados por demanda)")
