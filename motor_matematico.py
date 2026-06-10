@@ -92,9 +92,10 @@ def aplicar_restricoes_sinteticas(docentes, turmas):
             # Professor agrupado em 3 dias de trabalho (Folga forçada em 2 dias)
             perfil_integrado = [
                 ['QUI', 'SEX'],
-                ['SEG', 'TER']
+                ['SEG', 'TER'],
+                ['SEG', 'SEX']
             ]
-            perfil = perfil_integrado[contador % 2]
+            perfil = perfil_integrado[contador % 3]
             docentes[doc]['impedimentos'] = perfil.copy()
             print(f" -> {doc} (CH: {ch_total}): Alocado ao Bloco Integral - 3 dias de trabalho (Folgas: {perfil})")
             contador += 1
