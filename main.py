@@ -32,12 +32,12 @@ def main():
     print("\n[PRONTO] Ambiente limpo. Iniciando processamento dos novos dados...")
 
     # 1. Extração dos novos dados (Cria as pastas temporárias do zero)
-    # Correção: Alinhado para usar o nome correto importado no topo do arquivo
     extrair_abas_excel('Horário 2026 (1).xlsx') 
 
     # 2. Carga dos dados estruturados
-    docentes = carregar_docentes()
-    turmas = carregar_turmas()
+    # CORREÇÃO: Passando os caminhos gerados pelo extrator como argumentos
+    docentes = carregar_docentes('csv_extraidos/Docentes.csv')
+    turmas = carregar_turmas('csv_extraidos')
 
     # 3. Resolução Matemática
     solver, status, alocacoes, dias_semana = resolver_horario_estruturado(docentes, turmas)
