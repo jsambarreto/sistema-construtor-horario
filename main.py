@@ -1,8 +1,8 @@
 import os
 import shutil
-from automatizar_excel import extrair_abas_excel  # Nome real do seu script
+from automatizar_excel import extrair_abas_excel  
 from parser_dados import carregar_docentes, carregar_turmas
-from motor_matematico import resolver_horario_estruturado
+from motor_matematico import resolver_horario_estruturado, gerar_resumo_alocacao_professores
 from exportador_excel import exportar_para_excel
 
 def limpar_ambiente_antigo():
@@ -45,9 +45,10 @@ def main():
     # 4. Exportação Visual Nova (Garante arquivos 100% novos e limpos)
     if alocacoes:
         exportar_para_excel(solver, alocacoes, dias_semana, docentes, turmas)
+        gerar_resumo_alocacao_professores(solver, alocacoes)
+        
         print("\n[FIM] Processo concluído com sucesso!")
-    else:
-        print("\n[ERRO] Não foi possível exportar os horários.")
+    
 
 if __name__ == "__main__":
     main()

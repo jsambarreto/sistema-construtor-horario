@@ -30,7 +30,8 @@ def obter_blocos_validos(dia_idx, turno_turma, nome_turma):
 def aplicar_restricoes_sinteticas(docentes, turmas):
     """
     Agrupa professores sem restrições em blocos de trabalho compactos.
-    Ajustado para CH <= 12 para evitar estrangulamento matemático.
+    NOVA REGRA: Professores livres na SEG e QUA (dias de integral) são forçados
+    a folgar na QUI e SEX para otimizar o fluxo do campus.
     """
     ch_por_docente = {doc: 0 for doc in docentes}
     for demandas in turmas.values():
@@ -57,20 +58,55 @@ def aplicar_restricoes_sinteticas(docentes, turmas):
     for doc in docentes_elegiveis:
         ch_total = ch_por_docente[doc]
         
-        # Limite reduzido para 12. Professores com mais aulas precisam de folga para alocar os blocos de 2.
-        if 0 < ch_total <= 12:
-            perfil = perfis_sinteticos[contador % 3]
+        # --- NOVA REGRA DE DISTRIBUIÇÃO PONTUAL POR CARGA HORÁRIA ---
+        if 0 < ch_total < 5:
+            # Professor agrupado em apenas 1 dia de trabalho (Folga forçada em 4 dias)
+            # Exemplo de rodízio para não concentrar todos no mesmo dia da semana
+            perfis_1_dia = [
+                ['TER', 'QUA', 'QUI', 'SEX'],  # Trabalha na SEG
+                ['SEG', 'QUA', 'QUI', 'SEX'],  # Trabalha na TER
+                ['SEG', 'TER', 'QUI', 'SEX'],  # Trabalha na QUA
+                ['SEG', 'TER', 'QUA', 'SEX'],  # Trabalha na QUI
+                ['SEG', 'TER', 'QUA', 'QUI']   # Trabalha na SEX
+            ]
+            perfil = perfis_1_dia[contador % 5]
             docentes[doc]['impedimentos'] = perfil.copy()
-            print(f" -> {doc} (CH: {ch_total}): Alocado ao perfil curto (Folgas forçadas: {perfil})")
+            print(f" -> {doc} (CH: {ch_total}): Compactado para 1 dia de trabalho (Folgas: {perfil})")
             contador += 1
-        elif ch_total > 12:
-            print(f" -> {doc} (CH: {ch_total}): Mantido totalmente livre devido à elevada carga horária.")
 
+        elif 5 <= ch_total < 9:
+            # Professor agrupado em 2 dias de trabalho (Folga forçada em 3 dias)
+            perfis_2_dias = [
+                ['TER', 'QUI', 'SEX'],  # Trabalha na SEG-QUA (Dias de Integral)
+                ['QUA', 'QUI', 'SEX'],  # Trabalha na SEG-TER
+                ['SEG', 'TER', 'SEX'],  # Trabalha na QUA-QUI
+                ['SEG', 'QUI', 'SEX'],  # Trabalha na TER-QUA
+                ['SEG', 'TER', 'QUA']   # Trabalha na QUI-SEX
+            ]
+            perfil = perfis_2_dias[contador % 5]
+            docentes[doc]['impedimentos'] = perfil.copy()
+            print(f" -> {doc} (CH: {ch_total}): Compactado para 2 dias de trabalho (Folgas: {perfil})")
+            contador += 1
+
+        elif 9 <= ch_total <= 16:
+            # Professor agrupado em 3 dias de trabalho (Folga forçada em 2 dias)
+            perfil_integrado = [
+                ['QUI', 'SEX'],
+                ['SEG', 'TER']
+            ]
+            perfil = perfil_integrado[contador % 2]
+            docentes[doc]['impedimentos'] = perfil.copy()
+            print(f" -> {doc} (CH: {ch_total}): Alocado ao Bloco Integral - 3 dias de trabalho (Folgas: {perfil})")
+
+        else:
+            # Acima de 16 horas: Mantido totalmente livre devido à elevada carga horária
+            print(f" -> {doc} (CH: {ch_total}): Sem restrições sintéticas (Dias livres mapeados por demanda)")
     return docentes
 
 def construir_modelo(turmas_alvo, docentes, restricoes_fixas=None, modo_diagnostico=False):
     modelo = cp_model.CpModel()
     alocacoes = {}
+    bonus_atracao_quarta = [] # Lista para armazenar o bónus das disciplinas articuladoras
     
     nomes_docentes = set(d['docente'] for t in turmas_alvo.values() for d in t)
     pesos_docentes = {}
@@ -93,8 +129,11 @@ def construir_modelo(turmas_alvo, docentes, restricoes_fixas=None, modo_diagnost
                     if DIAS[d_idx] not in imp_docente:
                         var = modelo.NewBoolVar(f"V_{turma}_{disc}_{doc}_{d_idx}_{b}")
                         alocacoes[(turma, disc, doc, d_idx, b)] = var
+                        
+                        # NOVA REGRA: Mapeamento de Práticas Profissionais Articuladoras na Quarta-feira (d_idx == 2)
+                        if "PRATICAS" in disc.upper() and "ARTICULADORA" in disc.upper() and d_idx == 2:
+                            bonus_atracao_quarta.append(var)
 
-    # As restrições fixas do noturno agora são honradas mesmo no diagnóstico global
     if restricoes_fixas:
         for chave, valor in restricoes_fixas.items():
             if chave in alocacoes:
@@ -131,7 +170,6 @@ def construir_modelo(turmas_alvo, docentes, restricoes_fixas=None, modo_diagnost
             trabalha_noite = modelo.NewBoolVar(f"N_{doc}_{d_idx}")
 
             aulas_m = [v for (t, di, do, d, b), v in alocacoes.items() if do == doc and d == d_idx and b in M_SLOTS]
-            # Correção: Removida a palavra sintática com erro 'parks' desta linha
             aulas_t = [v for (t, di, do, d, b), v in alocacoes.items() if do == doc and d == d_idx and b in T_SLOTS]
             aulas_n = [v for (t, di, do, d, b), v in alocacoes.items() if do == doc and d == d_idx and b in N_SLOTS]
 
@@ -253,8 +291,12 @@ def construir_modelo(turmas_alvo, docentes, restricoes_fixas=None, modo_diagnost
             objetivos.append(janela * peso_docente)
             objetivos.append(sum(dias_trab) * peso_docente)
 
+        # Junta a minimização de janelas (penalidades) com a atração das Práticas na Quarta (recompensa positiva)
+        # Multiplicamos o bónus por 1000 para que a quarta-feira vença o elástico de janelas dos professores
         if objetivos:
-            modelo.Minimize(sum(objetivos))
+            modelo.Minimize(sum(objetivos) - (sum(bonus_atracao_quarta) * 1000))
+        elif bonus_atracao_quarta:
+            modelo.Maximize(sum(bonus_atracao_quarta))
 
     return modelo, alocacoes
 
@@ -296,7 +338,7 @@ def executar_diagnostico(turmas_alvo, docentes, restricoes_fixas=None):
                         print(f"      - Sugestão: Remova os impedimentos de '{doc}' na planilha 'Docentes.csv'.")
                         
                     elif aulas_totais_doc >= (len(dias_livres) * 5): 
-                        print(f"      - Motivo Primário: Agenda do professor estrangulada. Ele já tem {aulas_totais_doc} aulas empacotadas em apenas {len(dias_livres)} dias livres na instituição.")
+                        print(f"      - Motivo Primário: Agenda do professor estrangulada. Ele já tem {aulas_totais_doc} aulas empacotadas in apenas {len(dias_livres)} dias livres na instituição.")
                         print(f"      - Sugestão: Libere mais dias de trabalho para '{doc}' removendo impedimentos, ou reduza a sua carga horária.")
                         
                     elif aulas_totais_turma >= 35: 
@@ -309,7 +351,7 @@ def executar_diagnostico(turmas_alvo, docentes, restricoes_fixas=None):
         
         if falhas > 0:
             print("\n" + "-"*60)
-            print("[AÇÃO AUTOMÁTICA] Os ficheiros Excel gerados terão as células correspondentes a estes bloqueios em branco, respeitando a integridade geométrica (sem dividir aulas de 2 horas).")
+            print("[AÇÃO AUTOMÁTICA] Os ficheiros Excel gerados terão as células correspondentes a estes bloqueios em branco, respeitando a integridade geométrica.")
         return solver_diag, status_diag, aloc_diag
     
     return None, status_diag, None
@@ -350,3 +392,41 @@ def resolver_horario_estruturado(docentes, turmas):
         print("\n[FALHA GLOBAL] Conflito detetado na fase Diurna. A extrair horários parciais de TODAS as turmas para Excel...")
         solver_diag, status_diag, aloc_diag = executar_diagnostico(turmas, docentes_otimizados, restricoes_fixas)
         return solver_diag, status_diag, aloc_diag, DIAS
+
+def gerar_resumo_alocacao_professores(solver, alocacoes):
+    """
+    Exibe um resumo detalhado da alocação de cada professor:
+    Professor; Número de aulas; Dias no campus; Qnt dias sem aulas
+    """
+    print("\n" + "="*70)
+    print(" 📋 RESUMO DE ALOCAÇÃO E PRESENÇA DOS PROFESSORES")
+    print("="*70)
+    print("Professor; Numero de aulas; Dias no campus; Qnt dias sem aulas")
+    print("-"*70)
+
+    # Dicionário estruturado: dados_prof[docente] = {dia_idx: [aulas]}
+    dados_prof = {}
+    DIAS_NOMES = ['SEG', 'TER', 'QUA', 'QUI', 'SEX']
+
+    # Extrai o resultado real validado pelo solver
+    for (turma, disc, doc, dia_idx, bloco), var in alocacoes.items():
+        if solver.Value(var) == 1:
+            if doc not in dados_prof:
+                dados_prof[doc] = {d: 0 for d in range(5)}
+            dados_prof[doc][dia_idx] += 1
+
+    # Calcula as métricas para cada professor ordenados por nome
+    for prof in sorted(dados_prof.keys()):
+        total_aulas = sum(dados_prof[prof].values())
+        
+        # Identifica em quais dias o professor tem pelo menos 1 aula alocada
+        dias_no_campus_lista = [DIAS_NOMES[d] for d in range(5) if dados_prof[prof][d] > 0]
+        dias_no_campus_str = "-".join(dias_no_campus_lista) if dias_no_campus_lista else "NENHUM"
+        
+        # Quantidade de dias úteis (de segunda a sexta) sem nenhuma aula
+        qnt_dias_sem_aula = 5 - len(dias_no_campus_lista)
+        
+        # Imprime no formato requisitado separado por ponto e vírgula
+        print(f"{prof}; {total_aulas} aulas; [{dias_no_campus_str}]; {qnt_dias_sem_aula} dias livres")
+    
+    print("="*70 + "\n")
