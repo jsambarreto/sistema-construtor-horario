@@ -3,7 +3,7 @@ import shutil
 from automatizar_excel import extrair_abas_excel  # Nome real do seu script
 from parser_dados import carregar_docentes, carregar_turmas
 from motor_matematico import resolver_horario_estruturado
-from exportador_excel import exportar_para_excel
+from exportador_excel import exportar_horarios as exportar_para_excel  # Nome real do seu script
 
 def limpar_ambiente_antigo():
     print("[LIMPEZA] Faxinando arquivos de execuções anteriores...")
@@ -32,8 +32,8 @@ def main():
     print("\n[PRONTO] Ambiente limpo. Iniciando processamento dos novos dados...")
 
     # 1. Extração dos novos dados (Cria as pastas temporárias do zero)
-    # (Ajuste o nome da função/parâmetros conforme o seu automatizar_excel.py)
-    extrair_dados_excel('Horário 2026 (1).xlsx') 
+    # Correção: Alinhado para usar o nome correto importado no topo do arquivo
+    extrair_abas_excel('Horário 2026 (1).xlsx') 
 
     # 2. Carga dos dados estruturados
     docentes = carregar_docentes()

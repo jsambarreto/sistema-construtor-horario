@@ -131,6 +131,7 @@ def construir_modelo(turmas_alvo, docentes, restricoes_fixas=None, modo_diagnost
             trabalha_noite = modelo.NewBoolVar(f"N_{doc}_{d_idx}")
 
             aulas_m = [v for (t, di, do, d, b), v in alocacoes.items() if do == doc and d == d_idx and b in M_SLOTS]
+            # Correção: Removida a palavra sintática com erro 'parks' desta linha
             aulas_t = [v for (t, di, do, d, b), v in alocacoes.items() if do == doc and d == d_idx and b in T_SLOTS]
             aulas_n = [v for (t, di, do, d, b), v in alocacoes.items() if do == doc and d == d_idx and b in N_SLOTS]
 
@@ -280,11 +281,9 @@ def executar_diagnostico(turmas_alvo, docentes, restricoes_fixas=None):
                     falhas += 1
                     
                     # --- INÍCIO DA AUDITORIA DO GARGALO ---
-                    # 1. Analisa a disponibilidade do professor
                     impedimentos = docentes.get(doc, {}).get('impedimentos', [])
                     dias_livres = [d for d in DIAS if d not in impedimentos]
                     
-                    # 2. Calcula a ocupação atual do professor e da turma
                     aulas_totais_doc = sum(solver_diag.Value(v) for (t, di, do, d, b), v in aloc_diag.items() if do == doc)
                     aulas_totais_turma = sum(solver_diag.Value(v) for (t, di, do, d, b), v in aloc_diag.items() if t == turma)
                     
@@ -297,7 +296,6 @@ def executar_diagnostico(turmas_alvo, docentes, restricoes_fixas=None):
                         print(f"      - Sugestão: Remova os impedimentos de '{doc}' na planilha 'Docentes.csv'.")
                         
                     elif aulas_totais_doc >= (len(dias_livres) * 5): 
-                        # Se ele dá muitas aulas por dia disponível, não sobram blocos duplos
                         print(f"      - Motivo Primário: Agenda do professor estrangulada. Ele já tem {aulas_totais_doc} aulas empacotadas em apenas {len(dias_livres)} dias livres na instituição.")
                         print(f"      - Sugestão: Libere mais dias de trabalho para '{doc}' removendo impedimentos, ou reduza a sua carga horária.")
                         
@@ -338,7 +336,6 @@ def resolver_horario_estruturado(docentes, turmas):
     else:
         print(" -> [AVISO] O Noturno apresentou conflitos matemáticos quando isolado.")
         print(" -> A transitar sem congelamentos. A tentar resolver toda a grade escolar em simultâneo...")
-        # Não retorna e não aborta! O fluxo continua para a Fase 2 de forma limpa.
 
     print("\n[FASE 2] A processar grade GLOBAL (Diurno + Noturno) com otimização e compactação...")
     modelo_f2, aloc_f2 = construir_modelo(turmas, docentes_otimizados, restricoes_fixas)
