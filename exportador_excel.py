@@ -82,7 +82,8 @@ def extrair_dados_solver(solver, alocacoes):
             
     return grade_turmas, grade_docentes
 
-def exportar_horarios(solver, alocacoes, caminho_saida_turmas="Horarios_Turmas_2026.xlsx", caminho_saida_docentes="Horarios_Docentes_2026.xlsx"):
+# CORREÇÃO: Nome e assinatura ajustados para combinar com o main.py
+def exportar_para_excel(solver, alocacoes, dias_semana, docentes, turmas, caminho_saida_turmas="Horarios_Turmas_2026.xlsx", caminho_saida_docentes="Horarios_Docentes_2026.xlsx"):
     print("\n[+] A iniciar geração dos ficheiros Excel...")
     grade_turmas, grade_docentes = extrair_dados_solver(solver, alocacoes)
     

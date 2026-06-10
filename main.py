@@ -3,7 +3,7 @@ import shutil
 from automatizar_excel import extrair_abas_excel  # Nome real do seu script
 from parser_dados import carregar_docentes, carregar_turmas
 from motor_matematico import resolver_horario_estruturado
-from exportador_excel import exportar_horarios as exportar_para_excel  # Nome real do seu script
+from exportador_excel import exportar_para_excel
 
 def limpar_ambiente_antigo():
     print("[LIMPEZA] Faxinando arquivos de execuções anteriores...")
@@ -35,7 +35,7 @@ def main():
     extrair_abas_excel('Horário 2026 (1).xlsx') 
 
     # 2. Carga dos dados estruturados
-    # CORREÇÃO: Passando os caminhos gerados pelo extrator como argumentos
+    # CORREÇÃO: Apontando exatamente para a pasta 'csv_extraidos'
     docentes = carregar_docentes('csv_extraidos/Docentes.csv')
     turmas = carregar_turmas('csv_extraidos')
 
