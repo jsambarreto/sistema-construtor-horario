@@ -27,12 +27,18 @@ def obter_blocos_validos(dia_idx, turno_turma, nome_turma):
     if 'NOITE' in turnos: blocos.extend(N_SLOTS)
     return blocos
 
-def aplicar_restricoes_sinteticas(docentes, turmas):
+def processar_restricoes_e_limites(docentes, turmas):
     """
-    Em vez de forçar dias fixos de folga (o que causava gargalos no Noturno),
-    limitamos a QUANTIDADE de dias trabalhados e deixamos o solver
-    escolher os melhores dias, respeitando as regras de "gaps".
+    Exibe a tabela de Raio-X exigida pela coordenação e define os limites máximos 
+    de dias para evitar aulas muito espaçadas, respeitando os impedimentos base.
     """
+    print("\n" + "="*100)
+    print(" 📋 MAPEAMENTO GLOBAL DE DOCENTES (REGRAS, IMPEDIMENTOS E LIMITES)")
+    print("="*100)
+    print(f"{'PROFESSOR':<30} | {'CH':<3} | {'IMPEDIMENTOS':<20} | {'PREFERÊNCIAS':<20} | {'MAX DIAS'}")
+    print("-" * 100)
+
+    # Calcula a Carga Horária (CH) real de todos os professores a partir da demanda
     ch_por_docente = {doc: 0 for doc in docentes}
     for demandas in turmas.values():
         for dmd in demandas:
@@ -40,31 +46,36 @@ def aplicar_restricoes_sinteticas(docentes, turmas):
             if doc in ch_por_docente:
                 ch_por_docente[doc] += dmd['ch_semanal']
 
-    docentes_elegiveis = []
-    for doc, info in docentes.items():
-        if not info.get('impedimentos', []):
-            docentes_elegiveis.append(doc)
-            
-    docentes_elegiveis.sort()
-
-    print(f"\n[HEURÍSTICA] Flexibilizando a compactação de {len(docentes_elegiveis)} docentes sem restrições...")
-    for doc in docentes_elegiveis:
+    # Avalia os limites e imprime o relatório linha a linha
+    for doc in sorted(docentes.keys()):
         ch_total = ch_por_docente[doc]
         
-        # Define o LIMITE MÁXIMO de dias na escola
-        if 0 < ch_total < 5:
-            docentes[doc]['max_dias'] = 1
-            print(f" -> {doc} (CH: {ch_total}): Limite máximo de 1 dia de trabalho.")
-        elif 5 <= ch_total < 9:
-            docentes[doc]['max_dias'] = 2
-            print(f" -> {doc} (CH: {ch_total}): Limite máximo de 2 dias de trabalho.")
+        # Atribuição do limite máximo de dias focado na ergonomia do docente
+        if ch_total == 0:
+            max_dias = 0
+        elif 0 < ch_total <= 4:
+            max_dias = 1
+        elif 5 <= ch_total <= 8:
+            max_dias = 2
         elif 9 <= ch_total <= 16:
-            docentes[doc]['max_dias'] = 3
-            print(f" -> {doc} (CH: {ch_total}): Limite máximo de 3 dias de trabalho.")
+            max_dias = 3
         else:
-            docentes[doc]['max_dias'] = 5
-            print(f" -> {doc} (CH: {ch_total}): Sem limite sintético (Dias mapeados por demanda)")
+            max_dias = 5
+            
+        docentes[doc]['max_dias'] = max_dias
+        docentes[doc]['ch_total'] = ch_total
+        
+        # Extração de dados para o relatório visual
+        imp = docentes[doc].get('impedimentos', [])
+        pref = docentes[doc].get('preferencias', [])
+        
+        imp_str = "-".join(imp) if imp else "NENHUM"
+        pref_str = "-".join(pref) if pref else "NENHUMA"
+        
+        # Impressão formatada para a tabela
+        print(f"{doc[:30]:<30} | {ch_total:>3} | {imp_str:<20} | {pref_str:<20} | {max_dias}")
 
+    print("="*100 + "\n")
     return docentes
 
 def construir_modelo(turmas_alvo, docentes, restricoes_fixas=None, modo_diagnostico=False):
@@ -76,12 +87,12 @@ def construir_modelo(turmas_alvo, docentes, restricoes_fixas=None, modo_diagnost
     pesos_docentes = {}
     
     for doc in nomes_docentes:
-        ch_total = sum(dmd['ch_semanal'] for turma, demandas in turmas_alvo.items() for dmd in demandas if dmd['docente'] == doc)
+        ch_total = docentes.get(doc, {}).get('ch_total', 0)
         impedimentos = docentes.get(doc, {}).get('impedimentos', [])
         dias_livres = 5 - len([imp for imp in impedimentos if imp in DIAS])
         pesos_docentes[doc] = int((ch_total / max(1, dias_livres)) * 10)
 
-    # 1. CRIAÇÃO DE VARIÁVEIS
+    # 1. CRIAÇÃO DE VARIÁVEIS (A PAREDE DE BETÃO DOS IMPEDIMENTOS)
     for turma, demandas in turmas_alvo.items():
         turno_turma = determinar_turno_turma(turma)
         for dmd in demandas:
@@ -90,6 +101,7 @@ def construir_modelo(turmas_alvo, docentes, restricoes_fixas=None, modo_diagnost
                 blocos_permitidos = obter_blocos_validos(d_idx, turno_turma, turma)
                 for b in blocos_permitidos:
                     imp_docente = docentes.get(doc, {}).get('impedimentos', [])
+                    # Se o dia estiver no impedimento, a variável matemática SEQUER EXISTE
                     if DIAS[d_idx] not in imp_docente:
                         var = modelo.NewBoolVar(f"V_{turma}_{disc}_{doc}_{d_idx}_{b}")
                         alocacoes[(turma, disc, doc, d_idx, b)] = var
@@ -160,7 +172,6 @@ def construir_modelo(turmas_alvo, docentes, restricoes_fixas=None, modo_diagnost
                     for var_m in m1_m2_amanha:
                         modelo.AddImplication(n4_hoje[0], var_m.Not())
 
-        # --- NOVAS REGRAS DE GAPS INTELIGENTES ---
         dias_trab = docente_dias_trabalhados[doc]
         
         if not modo_diagnostico:
@@ -185,17 +196,12 @@ def construir_modelo(turmas_alvo, docentes, restricoes_fixas=None, modo_diagnost
         modelo.Add(janela == 0).OnlyEnforceIf(trabalha_algum_dia.Not())
         
         if not modo_diagnostico:
-            # 1. Regra Geral: O máximo de "buracos" no meio da semana é 1 dia.
             modelo.Add(janela - total_dias <= 1).OnlyEnforceIf(trabalha_algum_dia)
-            
-            # 2. Regra Estrita: Se trabalhar exatos 2 dias, os dias TÊM de ser seguidos. 
-            # (Ex: Proíbe trabalhar apenas Segunda e Quarta).
             b_2dias = modelo.NewBoolVar(f'b_2dias_{doc}')
             modelo.Add(total_dias == 2).OnlyEnforceIf(b_2dias)
             modelo.Add(total_dias != 2).OnlyEnforceIf(b_2dias.Not())
             modelo.Add(janela == 2).OnlyEnforceIf(b_2dias)
 
-        # Guarda as variáveis para serem usadas na função objetivo (Fase 5)
         docente_vars_otimizacao[doc] = (janela, dias_trab)
 
     # 4. CARGA HORÁRIA E CONTIGUIDADE
@@ -268,7 +274,7 @@ def construir_modelo(turmas_alvo, docentes, restricoes_fixas=None, modo_diagnost
             if ch == 3 and dias_com_aula_1:
                 modelo.Add(sum(dias_com_aula_1) <= 1)
 
-    # 5. OTIMIZAÇÃO
+    # 5. OTIMIZAÇÃO (INCLUINDO AS PREFERÊNCIAS!)
     if modo_diagnostico:
         modelo.Maximize(sum(alocacoes.values()))
     else:
@@ -277,15 +283,22 @@ def construir_modelo(turmas_alvo, docentes, restricoes_fixas=None, modo_diagnost
             peso_docente = pesos_docentes[doc]
             janela, dias_trab = docente_vars_otimizacao[doc]
             
-            # Penaliza janelas grandes para obrigar o solver a juntar as aulas
+            # Penaliza agendas esburacadas
             objetivos.append(janela * peso_docente)
             objetivos.append(sum(dias_trab) * peso_docente)
 
-            # Bônus para incentivar que as turmas ocorram nos dias de Integral
+            # EXTRA: Bônus Matemático de PREFERÊNCIAS
+            pref_docente = docentes.get(doc, {}).get('preferencias', [])
+            for d_idx in range(5):
+                # Se o dia em questão está na lista de preferências do professor, ganha bônus!
+                if DIAS[d_idx] in pref_docente:
+                    objetivos.append(-dias_trab[d_idx] * 50)
+            
+            # Se não tiver preferência e trabalhar poucos dias, atrai para Integral (Seg/Qua)
             max_dias_prof = docentes.get(doc, {}).get('max_dias', 5)
-            if max_dias_prof <= 3:
-                objetivos.append(-dias_trab[0] * 30)  # Bónus leve para Segunda-Feira
-                objetivos.append(-dias_trab[2] * 30)  # Bónus leve para Quarta-Feira
+            if max_dias_prof <= 3 and not pref_docente:
+                objetivos.append(-dias_trab[0] * 30)
+                objetivos.append(-dias_trab[2] * 30)
 
         if objetivos:
             modelo.Minimize(sum(objetivos) - (sum(bonus_atracao_quarta) * 1000))
@@ -330,7 +343,7 @@ def executar_diagnostico(turmas_alvo, docentes, restricoes_fixas=None):
                         print(f"      - Motivo Primário: Restrição severa de dias. O professor só está autorizado a trabalhar em {dias_livres}.")
                         
                     elif aulas_totais_doc >= (len(dias_livres) * 5): 
-                        print(f"      - Motivo Primário: Agenda do professor estrangulada. Ele já tem {aulas_totais_doc} aulas empacotadas in apenas {len(dias_livres)} dias livres na instituição.")
+                        print(f"      - Motivo Primário: Agenda do professor estrangulada. Ele já tem {aulas_totais_doc} aulas empacotadas em apenas {len(dias_livres)} dias livres na instituição.")
                         
                     elif aulas_totais_turma >= 35: 
                         print(f"      - Motivo Primário: Superlotação da Turma. A turma '{turma}' já está com a grade quase cheia ({aulas_totais_turma} aulas) e não possui blocos disponíveis que coincidam com o professor.")
@@ -353,7 +366,8 @@ def resolver_horario_estruturado(docentes, turmas):
     print(" MOTOR DE RESOLUÇÃO (HEURÍSTICO + OTIMIZADO)")
     print("="*40)
 
-    docentes_otimizados = aplicar_restricoes_sinteticas(docentes, turmas)
+    # NOVO: Tabela de Raio-X com todos os docentes
+    docentes_otimizados = processar_restricoes_e_limites(docentes, turmas)
     turmas_noturno = {k: v for k, v in turmas.items() if determinar_turno_turma(k) == 'NOTURNO'}
     
     print("\n[FASE 1] A processar turmas Noturnas (SUB)...")
