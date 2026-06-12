@@ -11,42 +11,50 @@ O pipeline do sistema está estruturado em uma arquitetura de 4 camadas integrad
 [Arquivo .xlsx] ──> [Automação & Parser] ──> [Heurística & Motor CP-SAT] ──> [Planilhas Coloridas]
 
 ### 1. Ingestão Automatizada e Pipeline de Dados
-* **Conversor Batch Excel para CSV:** Elimina o trabalho manual de exportar abas do Excel. O script lê dinamicamente o arquivo principal `Horário 2026 (1).xlsx`, isola as abas dos cursos (`INFO`, `EDF`) e de metadados (`Docentes`), gerando automaticamente os arquivos na pasta temporária `csv_gerados/`.
-* **Tradutor de Restrições Textuais:** Transforma texto livre humano da planilha (ex: `"Impedimento: SEG-TER-SEX"`, `"Preferência: QUA-QUI"`) em matrizes lógicas booleanas interpretáveis pelo algoritmo.
+* **Conversor Batch Excel para CSV:** Elimina o trabalho manual de exportar abas do Excel. O script lê dinamicamente o arquivo principal `Horário 2026 (1).xlsx`, isola as abas dos cursos (`INFO`, `EDF`) e de metadados (`Docentes`), gerando automaticamente os arquivos na pasta temporária `csv_extraidos/`.
+* **Tradutor de Restrições Textuais:** Transforma texto livre humano da planilha em matrizes lógicas booleanas interpretáveis pelo algoritmo.
 
 ### 2. O Motor de Otimização e Regras Escolares
-O coração da aplicação foi blindado para processar regras multidimensionais complexas, divididas em duas categorias estritas:
+O coração da aplicação foi blindado para processar regras multidimensionais complexas, divididas nas seguintes categorias estritas:
 
-#### 🛑 Restrições Rígidas (Hard Constraints - Compulsórias)
-* **Unicidade de Grelha:** Garante matematicamente a impossibilidade de choques. Um professor nunca pode estar em duas turmas no mesmo bloco de tempo, e uma turma nunca pode ter duas aulas simultâneas.
-* **Mapeamento de Turnos e Janelas Institucionais:**
-  * **Manhã (M1-M6):** 6 blocos | **Tarde (T1-T5):** 5 blocks | **Noite (N1-N4):** 4 blocos.
-  * **Bloqueio Geral da Tarde:** Às terças, quintas e sextas-feiras, o turno da tarde é desativado para todas as turmas diurnas.
-  * **Bloqueio de Segunda à Tarde:** Restrição específica aplicada estritamente às turmas do `2º Ano de Edificações` e `3º Ano de Informática`.
-* **Interstício Legal de 11 Horas:** Proteção à saúde do trabalhador baseada no regime jurídico. Se o docente lecionar no último bloco da noite (N4) do Dia D, o motor bloqueia automaticamente a sua escalação nos blocos da manhã seguinte (M1 e M2) do Dia D+1.
-* **Ergonomia de Turnos:** É proibido que um professor lecione nos 3 turnos (Manhã, Tarde e Noite) no mesmo dia. O limite máximo permitido por dia são 2 turnos ativos.
-* **Após Ajuste de Gaps:** Restringe o espalhamento de dias de trabalho. O motor aplica regras lógicas para impedir que o professor fique com grandes janelas ociosas no meio da semana (como trabalhar apenas na segunda e na sexta).
+#### 🛑 Regras Institucionais e Bloqueios de Turno
+* **Unicidade Absoluta:** Um professor não pode estar em duas turmas em simultâneo, e uma turma não pode ter duas disciplinas sobrepostas.
+* **Mapeamento de Blocos:** O dia escolar é dividido em 15 blocos: Manhã (6 blocos), Tarde (5 blocos) e Noite (4 blocos).
+* **Gestão do Diurno (Bloqueios de Tarde):**
+  * Às **Terças, Quintas e Sextas-feiras**, o turno da tarde é globalmente desativado para todas as turmas do Diurno.
+  * Às **Segundas-feiras**, o turno da tarde é bloqueado especificamente para as turmas `2º Ano de Edificações (EDF-2)` e `3º Ano de Informática (INFO-3)`.
 
-#### 📐 Divisões Pedagógicas e Contiguidade Estrita
-O sistema conta com um **Motor de Contiguidade** que impede aulas "espalhadas" ao longo do dia, obrigando que as aulas de uma mesma disciplina fiquem perfeitamente coladas (adjacentes). As divisões permitidas seguem regras estritas baseadas na Carga Horária Semanal (CH/S):
-* **CH = 2:** Proibido divisão 1+1. Deve ser obrigatoriamente alocado como um bloco único de 2 aulas contíguas.
-* **CH = 3:** Permite apenas a divisão no formato 2+1 (um bloco de duas aulas e uma aula isolada em outro dia). Proibido o formato 1+1+1.
-* **CH = 4 (Noturno):** Concentração total em uma única noite (bloco ininterrupto de 4 aulas).
-* **CH = 4 (Diurno):** Obriga o desmembramento equilibrado em exatamente 2+2 em dias diferentes. Proibido dar 4 aulas seguidas de manhã ou à tarde.
-* **CH >= 5:** Organização estrita em blocos de pares pedagógicos (ex: formato 3+2).
+#### ⚖️ Regras Laborais e Qualidade de Vida do Professor
+* **Limite de Turnos Diários:** É estritamente proibido que um professor lecione nos três turnos (Manhã, Tarde e Noite) no mesmo dia. O limite é de no máximo **2 turnos ativos**.
+* **Interstício Legal (Proteção ao Trabalhador):** Se um docente der aula no último horário da noite (N4), o algoritmo bloqueia automaticamente a sua presença nos dois primeiros blocos da manhã seguinte (M1 e M2).
+* **Gestão Inteligente de Gaps (Dias Ociosos):** * Se o professor trabalhar 3 ou mais dias na semana, o máximo de dias ociosos permitidos no meio da sua escala é **1 dia**.
+  * **Regra Estrita de 2 Dias:** Se a carga horária for compactada para exatamente 2 dias de trabalho, eles **têm de ser obrigatoriamente seguidos** (Gap = 0), proibindo escalas exaustivas espaçadas.
+
+#### 📐 Geometria Pedagógica e Contiguidade
+O motor proíbe que aulas fiquem "espalhadas" ao longo do dia, aplicando regras rígidas de acordo com a Carga Horária Semanal (CH):
+* **CH = 2:** Obrigatório bloco único de 2 aulas contíguas. Proibido formato (1+1).
+* **CH = 3:** Força estritamente a divisão em **(2+1)**. Permite um bloco duplo e apenas uma aula isolada em dia diferente. Proibido o formato (1+1+1).
+* **CH = 4 (Noturno):** Concentração ininterrupta das 4 aulas na mesma noite.
+* **CH = 4 (Diurno):** Obriga à divisão equilibrada em **(2+2)** em dias diferentes. Proibido aulas isoladas.
+* **CH >= 5:** Força a organização em blocos pares. Bloqueia completamente aulas isoladas.
 
 ### 3. Inteligência Artificial: Heurísticas e Resolução Resiliente
-* **Pré-Processador de Janelas Sintéticas:** Identifica professores sem impedimentos e com baixa carga horária (<= 12 horas). Antes do motor rodar, o sistema os agrupa e injeta mini-janelas artificiais de 3 dias (`SEG-TER`, `SEG-SEX` ou `QUI-SEX`). Isso compacta as agendas preventivamente e economiza poder de processamento.
-* **Hierarquia por Densidade de Restrição:** Calcula o nível de dificuldade de alocação de cada professor utilizando a fórmula de peso ponderado:
-  Densidade = (Carga Horária Total / Dias Disponíveis na Semana) * 10
-  Professores com maior densidade recebem prioridade máxima na Função Objetivo do solucionador matemático.
-* **Estratégia Max-SAT com Resolução Unificada:** Se o motor de duas fases encontrar algum conflito local no Noturno devido à rigidez das janelas de professores, o sistema não aborta o processo. Ele migra de forma dinâmica para uma resolução simultânea global (Diurno + Noturno), gerando as planilhas parciais mais completas possíveis e apontando no terminal um Raio-X detalhado de onde estão os gargalos humanos (como professores com restrições excessivas).
+
+* **Compactação Dinâmica de Dias (Pré-processador):** Limita os dias de trabalho na instituição baseando-se no volume de aulas, aplicando sub-rodízios para não esvaziar o campus num único dia:
+  * **< 5 horas:** Compactado para apenas **1 dia**.
+  * **5 a 8 horas:** Compactado para o máximo de **2 dias**.
+  * **9 a 16 horas:** Compactado para o máximo de **3 dias** (Rodízio forçando dias de turno integral: Seg-Ter ou Qui-Sex).
+  * **Acima de 16 horas:** Sem limites sintéticos (Otimizado por demanda).
+* **Atração Magnética (Soft Constraint):** Disciplinas de *"Práticas Profissionais Articuladoras"* recebem um prêmio matemático (+1000 pontos) caso sejam alocadas à **Quarta-Feira** (dia de maior disponibilidade de docentes), orientando o motor a preferir este dia.
+* **Estratégia de Busca de Piores Casos:** Calcula a "densidade de restrição" (Aulas / Dias Livres) de cada professor. Utiliza a estratégia `CHOOSE_FIRST` para construir a árvore de busca focando primeiro nos professores mais complexos e engessados.
+* **Minimização de Janelas:** A função objetivo pune matematicamente buracos na agenda, "espremendo" as aulas para começarem mais tarde e acabarem mais cedo no mesmo dia.
+* **Motor de Duas Fases e Auditor de Gargalos:** O sistema tenta resolver o Noturno primeiro (Fase 1) e depois o Diurno (Fase 2). Caso seja um modelo matematicamente insolúvel, ele gera planilhas parciais preenchendo o máximo possível e imprime um **Raio-X de Diagnóstico** indicando o exato gargalo humano (Ex: restrição severa de dias, estrangulamento da grade do docente, superlotação da turma ou falta de interseção para aulas).
 
 ### 4. Módulo de Exportação Visual Dinâmica
-O resultado da matriz matemática é traduzido pela biblioteca `openpyxl` em dois arquivos Excel customizados para distribuição:
+O resultado da matriz matemática é traduzido pela biblioteca `openpyxl` em dois arquivos Excel customizados:
 * **`Horarios_Turmas_2026.xlsx`:** Grelhas separadas por abas para cada turma (Alunos/Coordenação).
 * **`Horarios_Docentes_2026.xlsx`:** Grelhas individuais por aba para cada professor da instituição.
-* *Diferenciais Visuais:* Cores pastéis geradas via hash algorítmico (uma disciplina/turma mantém sempre a mesma cor em toda a grade), sombreamento estético por turno, quebra automática de linha (`wrap_text`) e bordas completas padrão Excel.
+* *Diferenciais Visuais:* Cores pastéis geradas via hash algorítmico (uma disciplina/turma mantém sempre a mesma cor em toda a grade), sombreamento por turno e relatório de métricas de alocação de docentes no terminal.
 
 ---
 
@@ -54,12 +62,12 @@ O resultado da matriz matemática é traduzido pela biblioteca `openpyxl` em doi
 
 O código-fonte é modularizado para manter a manutenibilidade e a separação de responsabilidades:
 
-* **`main.py`:** O orquestrador central que executa o pipeline em cascata na ordem lógica correta.
-* **`automatizar_excel.py`:** Gerencia a leitura do `.xlsx` de entrada e cria os arquivos `.csv`.
-* **`parser_dados.py`:** Filtra os dados e limpa strings textuais para dicionários estruturados.
-* **`motor_matematico.py`:** Onde residem o modelo do OR-Tools, as restrições lineares, implicações lógicas e a função objetivo de minimização de janelas.
-* **`exportador_excel.py`:** Módulo responsável pelo design, estilização, cores e salvamento das planilhas finais.
-* **`.gitignore`:** Proteção e segurança do repositório. Impede o envio acidental de arquivos `.csv` temporários e planilhas `.xlsx` com dados institucionais para o GitHub.
+* **`main.py`:** Orquestrador central que executa o pipeline em cascata e limpa execuções antigas.
+* **`automatizar_excel.py`:** Gerencia a leitura do `.xlsx` de entrada e extrai os arquivos `.csv`.
+* **`parser_dados.py`:** Filtra os dados e converte textos para dicionários estruturados.
+* **`motor_matematico.py`:** Onde residem o modelo OR-Tools, regras lineares, lógica heurística e função objetivo.
+* **`exportador_excel.py`:** Design, estilização, geração de cores em HEX e salvamento das planilhas finais.
+* **`.gitignore`:** Proteção e segurança. Impede o envio acidental de planilhas institucionais reais para o GitHub.
 
 ---
 
@@ -69,7 +77,7 @@ O código-fonte é modularizado para manter a manutenibilidade e a separação d
 No terminal do seu VS Code, execute:
 ```bash
 # Clonar o repositório
-git clone [https://github.com/seu-usuario/sistema-construtor-horario.git](https://github.com/seu-usuario/sistema-construtor-horario.git)
+git clone [https://github.com/jsambarreto/sistema-construtor-horario.git](https://github.com/jsambarreto/sistema-construtor-horario.git)
 cd sistema-construtor-horario
 
 # Criar o ambiente virtual (venv)
